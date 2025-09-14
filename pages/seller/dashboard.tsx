@@ -40,7 +40,6 @@ export default function SellerDashboard() {
     try {
       const response = await fetch('/api/user/check');
       const userData = await response.json();
-      
       if (userData.role !== 'seller') {
         router.push('/auth/role-select');
       }
@@ -51,7 +50,6 @@ export default function SellerDashboard() {
 
   const fetchAvailability = async () => {
     if (!session?.user?.id) return;
-
     setLoading(true);
     try {
       const response = await fetch(`/api/availability?sellerId=${session.user.id}&date=${selectedDate}`);
@@ -69,17 +67,15 @@ export default function SellerDashboard() {
     return new Date(dateString).toLocaleTimeString('en-US', {
       hour: 'numeric',
       minute: '2-digit',
-      hour12: true
+      hour12: true,
+      timeZone: 'Asia/Kolkata', // IST
     });
   };
 
-  const getSlotStatus = (slot: TimeSlot) => {
-    return slot.available ? 'Available' : 'Busy';
-  };
+  const getSlotStatus = (slot: TimeSlot) => (slot.available ? 'Available' : 'Busy');
 
-  const getSlotColor = (slot: TimeSlot) => {
-    return slot.available ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200';
-  };
+  const getSlotColor = (slot: TimeSlot) =>
+    slot.available ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200';
 
   if (status === 'loading') {
     return (
@@ -94,6 +90,7 @@ export default function SellerDashboard() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Navbar */}
       <nav className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16">
@@ -102,19 +99,11 @@ export default function SellerDashboard() {
             </div>
             <div className="flex items-center space-x-4">
               <span className="text-gray-700">Welcome, {session?.user?.name}</span>
-              <Button
-                variant="outline"
-                onClick={() => router.push('/seller/appointments')}
-              >
-                <Calendar className="w-4 h-4 mr-2" />
-                My Appointments
+              <Button variant="outline" onClick={() => router.push('/seller/appointments')}>
+                <Calendar className="w-4 h-4 mr-2" /> My Appointments
               </Button>
-              <Button
-                variant="outline"
-                onClick={() => signOut({ callbackUrl: '/auth/signin' })}
-              >
-                <LogOut className="w-4 h-4 mr-2" />
-                Sign Out
+              <Button variant="outline" onClick={() => signOut({ callbackUrl: '/auth/signin' })}>
+                <LogOut className="w-4 h-4 mr-2" /> Sign Out
               </Button>
             </div>
           </div>
@@ -127,8 +116,7 @@ export default function SellerDashboard() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center">
-                <User className="w-5 h-5 mr-2" />
-                Your Profile
+                <User className="w-5 h-5 mr-2" /> Your Profile
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -140,17 +128,13 @@ export default function SellerDashboard() {
                     className="w-20 h-20 rounded-full mx-auto mb-4"
                   />
                 )}
-                <h3 className="text-lg font-semibold text-gray-900">
-                  {session?.user?.name}
-                </h3>
+                <h3 className="text-lg font-semibold text-gray-900">{session?.user?.name}</h3>
                 <p className="text-gray-600">{session?.user?.email}</p>
                 <div className="mt-4 p-3 bg-green-50 rounded-lg">
                   <p className="text-sm text-green-800">
                     <strong>Status:</strong> Available for bookings
                   </p>
-                  <p className="text-sm text-green-700 mt-1">
-                    Working Hours: 9:00 AM - 9:00 PM
-                  </p>
+                  <p className="text-sm text-green-700 mt-1">Working Hours: 9:00 AM - 9:00 PM</p>
                 </div>
               </div>
             </CardContent>
@@ -160,8 +144,7 @@ export default function SellerDashboard() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center">
-                <Calendar className="w-5 h-5 mr-2" />
-                Select Date
+                <Calendar className="w-5 h-5 mr-2" /> Select Date
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -174,9 +157,7 @@ export default function SellerDashboard() {
               />
               <div className="mt-4 text-sm text-gray-600">
                 <p>Your availability is automatically synced from Google Calendar.</p>
-                <p className="mt-2">
-                  <strong>Legend:</strong>
-                </p>
+                <p className="mt-2"><strong>Legend:</strong></p>
                 <div className="flex items-center mt-1">
                   <div className="w-3 h-3 bg-green-200 rounded mr-2"></div>
                   <span>Available for booking</span>
@@ -193,8 +174,7 @@ export default function SellerDashboard() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center">
-                <Settings className="w-5 h-5 mr-2" />
-                Availability Settings
+                <Settings className="w-5 h-5 mr-2" /> Availability Settings
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -213,7 +193,7 @@ export default function SellerDashboard() {
                 </div>
                 <div className="mt-4 p-3 bg-blue-50 rounded-lg">
                   <p className="text-sm text-blue-800">
-                    <strong>Note:</strong> Your availability is automatically managed through your Google Calendar. 
+                    <strong>Note:</strong> Your availability is automatically managed through your Google Calendar.
                     Busy times from your calendar will be marked as unavailable for booking.
                   </p>
                 </div>
@@ -226,12 +206,13 @@ export default function SellerDashboard() {
         <Card className="mt-8">
           <CardHeader>
             <CardTitle className="flex items-center">
-              <Clock className="w-5 h-5 mr-2" />
-              Availability for {new Date(selectedDate).toLocaleDateString('en-US', {
+              <Clock className="w-5 h-5 mr-2" /> Availability for{' '}
+              {new Date(selectedDate).toLocaleDateString('en-US', {
                 weekday: 'long',
                 year: 'numeric',
                 month: 'long',
-                day: 'numeric'
+                day: 'numeric',
+                timeZone: 'Asia/Kolkata',
               })}
             </CardTitle>
           </CardHeader>
@@ -244,19 +225,14 @@ export default function SellerDashboard() {
             ) : (
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
                 {timeSlots.map((slot, index) => (
-                  <div
-                    key={index}
-                    className={`p-3 rounded-lg border text-center ${getSlotColor(slot)}`}
-                  >
-                    <div className="text-sm font-medium">
-                      {formatTime(slot.start)}
-                    </div>
-                    <div className="text-xs mt-1">
-                      {formatTime(slot.end)}
-                    </div>
-                    <div className={`text-xs mt-2 font-medium ${
-                      slot.available ? 'text-green-700' : 'text-red-700'
-                    }`}>
+                  <div key={index} className={`p-3 rounded-lg border text-center ${getSlotColor(slot)}`}>
+                    <div className="text-sm font-medium">{formatTime(slot.start)}</div>
+                    <div className="text-xs mt-1">{formatTime(slot.end)}</div>
+                    <div
+                      className={`text-xs mt-2 font-medium ${
+                        slot.available ? 'text-green-700' : 'text-red-700'
+                      }`}
+                    >
                       {getSlotStatus(slot)}
                     </div>
                   </div>

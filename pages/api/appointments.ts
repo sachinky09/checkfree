@@ -4,10 +4,36 @@ import { authOptions } from './auth/[...nextauth]';
 import clientPromise from '../../lib/mongodb';
 import { createCalendarEvent, getCalendarEvents, refreshAccessToken } from '../../lib/googleCalendar';
 import { decryptToken } from '../../lib/encryption';
+import { ObjectId } from 'mongodb';
+
+interface SessionUser {
+  email: string;
+}
+
+interface Session {
+  user: SessionUser;
+}
+
+interface CalendarEvent {
+  summary: string;
+  description?: string;
+  start: { dateTime: string; timeZone: string };
+  end: { dateTime: string; timeZone: string };
+  attendees?: { email: string; responseStatus: string }[];
+}
+
+interface GoogleEvent {
+  id: string;
+  summary?: string;
+  description?: string;
+  start?: { dateTime?: string };
+  end?: { dateTime?: string };
+  attendees?: { email: string; responseStatus?: string }[];
+}
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const session = await getServerSession(req, res, authOptions);
-  
+  const session = (await getServerSession(req, res, authOptions)) as Session | null;
+
   if (!session?.user?.email) {
     return res.status(401).json({ message: 'Unauthorized' });
   }
@@ -21,7 +47,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 }
 
-async function handleCreateAppointment(req: NextApiRequest, res: NextApiResponse, session: any) {
+async function handleCreateAppointment(req: NextApiRequest, res: NextApiResponse, session: Session) {
   const { sellerId, startTime, endTime, title } = req.body;
 
   if (!sellerId || !startTime || !endTime || !title) {
@@ -33,51 +59,40 @@ async function handleCreateAppointment(req: NextApiRequest, res: NextApiResponse
     const db = client.db('checkfree');
     const users = db.collection('users');
 
-    const seller = await users.findOne({ _id: new (require('mongodb')).ObjectId(sellerId) });
-    const buyer = await users.findOne({ email: session.user.email });
+    const seller = await users.findOne({ _id: new ObjectId(sellerId) }) as any;
+    const buyer = await users.findOne({ email: session.user.email }) as any;
 
     if (!seller || !buyer) {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    // Get tokens for both users
     const sellerRefreshToken = decryptToken(seller.refreshToken);
     const buyerRefreshToken = decryptToken(buyer.refreshToken);
-    
+
     const sellerAccessToken = await refreshAccessToken(sellerRefreshToken);
     const buyerAccessToken = await refreshAccessToken(buyerRefreshToken);
 
-    // Create calendar event for both users
-    const eventData = {
+    // ✅ IST TimeZone
+    const eventData: CalendarEvent = {
       summary: title,
       description: 'Scheduled via CheckFree',
-      start: {
-        dateTime: startTime,
-        timeZone: 'UTC',
-      },
-      end: {
-        dateTime: endTime,
-        timeZone: 'UTC',
-      },
+      start: { dateTime: startTime, timeZone: 'Asia/Kolkata' },
+      end: { dateTime: endTime, timeZone: 'Asia/Kolkata' },
       attendees: [
-        { email: seller.email },
-        { email: buyer.email }
+        { email: seller.email, responseStatus: 'needsAction' },
+        { email: buyer.email, responseStatus: 'needsAction' }
       ],
     };
 
-    // Create event in seller's calendar
     const sellerEvent = await createCalendarEvent(sellerAccessToken, eventData);
-    
-    // Create event in buyer's calendar
     await createCalendarEvent(buyerAccessToken, eventData);
 
-    // Save appointment to database
     const appointments = db.collection('appointments');
     await appointments.insertOne({
       sellerId: seller._id,
       buyerId: buyer._id,
       title,
-      startTime: new Date(startTime),
+      startTime: new Date(startTime), // still stored as UTC, safe
       endTime: new Date(endTime),
       googleEventId: sellerEvent.id,
       createdAt: new Date(),
@@ -90,13 +105,13 @@ async function handleCreateAppointment(req: NextApiRequest, res: NextApiResponse
   }
 }
 
-async function handleGetAppointments(req: NextApiRequest, res: NextApiResponse, session: any) {
+async function handleGetAppointments(req: NextApiRequest, res: NextApiResponse, session: Session) {
   try {
     const client = await clientPromise;
     const db = client.db('checkfree');
     const users = db.collection('users');
 
-    const user = await users.findOne({ email: session.user.email });
+    const user = await users.findOne({ email: session.user.email }) as any;
 
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
@@ -107,13 +122,12 @@ async function handleGetAppointments(req: NextApiRequest, res: NextApiResponse, 
 
     const now = new Date();
     const timeMin = now.toISOString();
-    const timeMax = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString(); // 30 days from now
+    const timeMax = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
-    const events = await getCalendarEvents(accessToken, timeMin, timeMax);
+    const events: GoogleEvent[] = await getCalendarEvents(accessToken, timeMin, timeMax);
 
-    // Filter events that are CheckFree appointments
-    const appointments = events.filter(event => 
-      event.description && event.description.includes('Scheduled via CheckFree')
+    const appointments = events.filter(event =>
+      event.description?.includes('Scheduled via CheckFree')
     );
 
     res.status(200).json({ appointments });

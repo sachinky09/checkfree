@@ -11,7 +11,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   const session = await getServerSession(req, res, authOptions);
-  
+
   if (!session?.user?.email) {
     return res.status(401).json({ message: 'Unauthorized' });
   }
@@ -33,40 +33,38 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(404).json({ message: 'Seller not found' });
     }
 
-    // Get seller's refresh token
     const refreshToken = decryptToken(seller.refreshToken);
     const accessToken = await refreshAccessToken(refreshToken);
 
-    // Generate time slots for the day (9 AM to 9 PM)
+    // IST offset
+    const IST_OFFSET = 5.5 * 60 * 60 * 1000; // 5 hours 30 mins
+
+    // Generate slots in IST (9AM - 9PM IST)
     const selectedDate = new Date(date as string);
-    const timeMin = new Date(selectedDate);
-    timeMin.setHours(9, 0, 0, 0);
-    const timeMax = new Date(selectedDate);
-    timeMax.setHours(21, 0, 0, 0);
+    const istStart = new Date(selectedDate);
+    istStart.setHours(9, 0, 0, 0);
+    const istEnd = new Date(selectedDate);
+    istEnd.setHours(21, 0, 0, 0);
 
-    // Get busy times from Google Calendar
-    const freeBusyData = await getFreeBusy(
-      accessToken,
-      seller.email,
-      timeMin.toISOString(),
-      timeMax.toISOString()
-    );
+    // Convert IST to UTC for Google Calendar
+    const timeMinUTC = new Date(istStart.getTime() - IST_OFFSET).toISOString();
+    const timeMaxUTC = new Date(istEnd.getTime() - IST_OFFSET).toISOString();
 
+    const freeBusyData = await getFreeBusy(accessToken, seller.email, timeMinUTC, timeMaxUTC);
     const busyTimes = freeBusyData.calendars[seller.email]?.busy || [];
 
-    // Generate 30-minute slots
     const slots = [];
-    const current = new Date(timeMin);
+    const current = new Date(istStart);
 
-    while (current < timeMax) {
+    while (current < istEnd) {
       const slotStart = new Date(current);
       const slotEnd = new Date(current.getTime() + 30 * 60 * 1000);
 
-      // Check if this slot overlaps with any busy time
       const isSlotBusy = busyTimes.some(busy => {
-        const busyStart = new Date(busy.start);
-        const busyEnd = new Date(busy.end);
-        return slotStart < busyEnd && slotEnd > busyStart;
+        // Convert busy times to IST for comparison
+        const busyStart = busy.start.includes('T') ? new Date(busy.start).getTime() + IST_OFFSET : new Date(busy.start + 'T00:00:00').getTime();
+        const busyEnd = busy.end.includes('T') ? new Date(busy.end).getTime() + IST_OFFSET : new Date(busy.end + 'T00:00:00').getTime();
+        return slotStart.getTime() < busyEnd && slotEnd.getTime() > busyStart;
       });
 
       slots.push({
