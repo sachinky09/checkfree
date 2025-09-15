@@ -27,7 +27,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const db = client.db('checkfree');
     const users = db.collection('users');
 
-    const seller = await users.findOne({ _id: new (require('mongodb')).ObjectId(sellerId as string) });
+    const seller = await users.findOne({
+      _id: new (require('mongodb')).ObjectId(sellerId as string),
+    });
 
     if (!seller || seller.role !== 'seller') {
       return res.status(404).json({ message: 'Seller not found' });
@@ -36,11 +38,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const refreshToken = decryptToken(seller.refreshToken);
     const accessToken = await refreshAccessToken(refreshToken);
 
-    // IST offset
-    const IST_OFFSET = 5.5 * 60 * 60 * 1000; // 5 hours 30 mins
+    // IST offset (5h 30m in ms)
+    const IST_OFFSET = 5.5 * 60 * 60 * 1000;
+
+    // Parse the date properly (YYYY-MM-DD from frontend)
+    const [year, month, day] = (date as string).split('-').map(Number);
+    const selectedDate = new Date(year, month - 1, day);
 
     // Generate slots in IST (9AM - 9PM IST)
-    const selectedDate = new Date(date as string);
     const istStart = new Date(selectedDate);
     istStart.setHours(9, 0, 0, 0);
     const istEnd = new Date(selectedDate);
@@ -50,7 +55,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const timeMinUTC = new Date(istStart.getTime() - IST_OFFSET).toISOString();
     const timeMaxUTC = new Date(istEnd.getTime() - IST_OFFSET).toISOString();
 
-    const freeBusyData = await getFreeBusy(accessToken, seller.email, timeMinUTC, timeMaxUTC);
+    const freeBusyData = await getFreeBusy(
+      accessToken,
+      seller.email,
+      timeMinUTC,
+      timeMaxUTC
+    );
     const busyTimes = freeBusyData.calendars[seller.email]?.busy || [];
 
     const slots = [];
@@ -60,17 +70,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const slotStart = new Date(current);
       const slotEnd = new Date(current.getTime() + 30 * 60 * 1000);
 
-      const isSlotBusy = busyTimes.some(busy => {
-        // Convert busy times to IST for comparison
-        const busyStart = busy.start.includes('T') ? new Date(busy.start).getTime() + IST_OFFSET : new Date(busy.start + 'T00:00:00').getTime();
-        const busyEnd = busy.end.includes('T') ? new Date(busy.end).getTime() + IST_OFFSET : new Date(busy.end + 'T00:00:00').getTime();
+      // Compare directly in UTC (Google busy times are already UTC)
+      const isSlotBusy = busyTimes.some((busy) => {
+        const busyStart = new Date(busy.start).getTime();
+        const busyEnd = new Date(busy.end).getTime();
         return slotStart.getTime() < busyEnd && slotEnd.getTime() > busyStart;
       });
 
       slots.push({
         start: slotStart.toISOString(),
         end: slotEnd.toISOString(),
-        available: !isSlotBusy
+        available: !isSlotBusy,
       });
 
       current.setTime(current.getTime() + 30 * 60 * 1000);
