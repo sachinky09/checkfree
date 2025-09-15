@@ -5,6 +5,7 @@ import clientPromise from '../../lib/mongodb';
 import { createCalendarEvent, getCalendarEvents, refreshAccessToken } from '../../lib/googleCalendar';
 import { decryptToken } from '../../lib/encryption';
 import { ObjectId } from 'mongodb';
+import { DateTime } from 'luxon';
 
 interface SessionUser {
   email: string;
@@ -72,12 +73,19 @@ async function handleCreateAppointment(req: NextApiRequest, res: NextApiResponse
     const sellerAccessToken = await refreshAccessToken(sellerRefreshToken);
     const buyerAccessToken = await refreshAccessToken(buyerRefreshToken);
 
-    // ✅ IST TimeZone
+    // ✅ Ensure times are stored and sent in IST
+    const startIST = DateTime.fromISO(startTime, { zone: 'Asia/Kolkata' }).toISO();
+    const endIST = DateTime.fromISO(endTime, { zone: 'Asia/Kolkata' }).toISO();
+
+    if (!startIST || !endIST) {
+      return res.status(400).json({ message: 'Invalid date format' });
+    }
+
     const eventData: CalendarEvent = {
       summary: title,
       description: 'Scheduled via CheckFree',
-      start: { dateTime: startTime, timeZone: 'Asia/Kolkata' },
-      end: { dateTime: endTime, timeZone: 'Asia/Kolkata' },
+      start: { dateTime: startIST, timeZone: 'Asia/Kolkata' },
+      end: { dateTime: endIST, timeZone: 'Asia/Kolkata' },
       attendees: [
         { email: seller.email, responseStatus: 'needsAction' },
         { email: buyer.email, responseStatus: 'needsAction' }
@@ -92,8 +100,8 @@ async function handleCreateAppointment(req: NextApiRequest, res: NextApiResponse
       sellerId: seller._id,
       buyerId: buyer._id,
       title,
-      startTime: new Date(startTime), // still stored as UTC, safe
-      endTime: new Date(endTime),
+      startTime: startIST, // 👉 Stored as IST ISO string
+      endTime: endIST,
       googleEventId: sellerEvent.id,
       createdAt: new Date(),
     });
@@ -120,15 +128,32 @@ async function handleGetAppointments(req: NextApiRequest, res: NextApiResponse, 
     const refreshToken = decryptToken(user.refreshToken);
     const accessToken = await refreshAccessToken(refreshToken);
 
-    const now = new Date();
-    const timeMin = now.toISOString(); 
-    const timeMax = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    const now = DateTime.now().setZone('Asia/Kolkata');
+    const timeMin = now.toUTC().toISO()!;
+    const timeMax = now.plus({ days: 30 }).toUTC().toISO()!;
 
     const events: GoogleEvent[] = await getCalendarEvents(accessToken, timeMin, timeMax);
 
-    const appointments = events.filter(event =>
-      event.description?.includes('Scheduled via CheckFree')
-    );
+    // ✅ Convert everything to IST before sending to frontend
+    const appointments = events
+      .filter(event => event.description?.includes('Scheduled via CheckFree'))
+      .map(event => ({
+        ...event,
+        start: {
+          dateTime: event.start?.dateTime
+            ? DateTime.fromISO(event.start.dateTime, { zone: 'utc' })
+                .setZone('Asia/Kolkata')
+                .toISO()
+            : null,
+        },
+        end: {
+          dateTime: event.end?.dateTime
+            ? DateTime.fromISO(event.end.dateTime, { zone: 'utc' })
+                .setZone('Asia/Kolkata')
+                .toISO()
+            : null,
+        },
+      }));
 
     res.status(200).json({ appointments });
   } catch (error) {

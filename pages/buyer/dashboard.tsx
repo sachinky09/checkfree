@@ -127,15 +127,13 @@ export default function BuyerDashboard() {
 
   const formatTime = (dateString: string) => {
   const date = new Date(dateString);
-  // Use IST offset to display correctly
-  const IST_OFFSET = 5.5 * 60; // minutes
-  const istDate = new Date(date.getTime() + IST_OFFSET * 60 * 1000);
-  return istDate.toLocaleTimeString('en-US', {
+  return date.toLocaleTimeString('en-US', {
     hour: 'numeric',
     minute: '2-digit',
     hour12: true
   });
 };
+
 
 
   if (status === 'loading') {

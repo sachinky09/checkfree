@@ -51,16 +51,18 @@ export default function SellerAppointments() {
   const formatDateTime = (dateString: string) => {
     const date = new Date(dateString);
     return {
-      date: date.toLocaleDateString('en-US', {
+      date: date.toLocaleDateString('en-IN', {
         weekday: 'long',
         year: 'numeric',
         month: 'long',
-        day: 'numeric'
+        day: 'numeric',
+        timeZone: 'Asia/Kolkata'
       }),
-      time: date.toLocaleTimeString('en-US', {
+      time: date.toLocaleTimeString('en-IN', {
         hour: 'numeric',
         minute: '2-digit',
-        hour12: true
+        hour12: true,
+        timeZone: 'Asia/Kolkata'
       })
     };
   };

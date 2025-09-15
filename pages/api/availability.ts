@@ -4,6 +4,7 @@ import { authOptions } from './auth/[...nextauth]';
 import clientPromise from '../../lib/mongodb';
 import { getFreeBusy, refreshAccessToken } from '../../lib/googleCalendar';
 import { decryptToken } from '../../lib/encryption';
+import { DateTime } from 'luxon';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'GET') {
@@ -38,22 +39,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const refreshToken = decryptToken(seller.refreshToken);
     const accessToken = await refreshAccessToken(refreshToken);
 
-    // IST offset (5h 30m in ms)
-    const IST_OFFSET = 5.5 * 60 * 60 * 1000;
+    // Parse selected date in IST
+    const selectedDate = DateTime.fromISO(date as string, { zone: 'Asia/Kolkata' });
 
-    // Parse the date properly (YYYY-MM-DD from frontend)
-    const [year, month, day] = (date as string).split('-').map(Number);
-    const selectedDate = new Date(year, month - 1, day);
+    // Working hours in IST (9 AM – 9 PM)
+    const istStart = selectedDate.set({ hour: 9, minute: 0, second: 0, millisecond: 0 });
+    const istEnd = selectedDate.set({ hour: 21, minute: 0, second: 0, millisecond: 0 });
 
-    // Generate slots in IST (9AM - 9PM IST)
-    const istStart = new Date(selectedDate);
-    istStart.setHours(9, 0, 0, 0);
-    const istEnd = new Date(selectedDate);
-    istEnd.setHours(21, 0, 0, 0);
+    // Convert IST → UTC for Google Calendar API
+    // Convert IST → UTC for Google Calendar API
+    const timeMinUTC = istStart.toUTC().toISO()!;
+    const timeMaxUTC = istEnd.toUTC().toISO()!;
 
-    // Convert IST to UTC for Google Calendar
-    const timeMinUTC = new Date(istStart.getTime() - IST_OFFSET).toISOString();
-    const timeMaxUTC = new Date(istEnd.getTime() - IST_OFFSET).toISOString();
 
     const freeBusyData = await getFreeBusy(
       accessToken,
@@ -61,29 +58,30 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       timeMinUTC,
       timeMaxUTC
     );
+
     const busyTimes = freeBusyData.calendars[seller.email]?.busy || [];
 
     const slots = [];
-    const current = new Date(istStart);
+    let current = istStart;
 
     while (current < istEnd) {
-      const slotStart = new Date(current);
-      const slotEnd = new Date(current.getTime() + 30 * 60 * 1000);
+      const slotStart = current;
+      const slotEnd = current.plus({ minutes: 30 });
 
-      // Compare directly in UTC (Google busy times are already UTC)
+      // Busy times from Google are in UTC, so convert them to millis for comparison
       const isSlotBusy = busyTimes.some((busy) => {
-        const busyStart = new Date(busy.start).getTime();
-        const busyEnd = new Date(busy.end).getTime();
-        return slotStart.getTime() < busyEnd && slotEnd.getTime() > busyStart;
+        const busyStart = DateTime.fromISO(busy.start, { zone: 'utc' }).toMillis();
+        const busyEnd = DateTime.fromISO(busy.end, { zone: 'utc' }).toMillis();
+        return slotStart.toMillis() < busyEnd && slotEnd.toMillis() > busyStart;
       });
 
       slots.push({
-        start: slotStart.toISOString(),
-        end: slotEnd.toISOString(),
+        start: slotStart.toISO(), // 👉 This will be in IST (+05:30 offset)
+        end: slotEnd.toISO(),
         available: !isSlotBusy,
       });
 
-      current.setTime(current.getTime() + 30 * 60 * 1000);
+      current = slotEnd;
     }
 
     res.status(200).json({ slots });
