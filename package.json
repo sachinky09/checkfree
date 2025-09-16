@@ -1,5 +1,6 @@
 {
-  "name": "nextjs",
+  "name": "Checkfree",
+  "description": "Uses google calender API to fetch data and schedule meetings",
   "version": "0.1.0",
   "private": true,
   "scripts": {
